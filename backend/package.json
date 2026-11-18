@@ -1,0 +1,11 @@
+{
+  "name": "vexora-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "API_ONLY=true tsx server.ts",
+    "start": "node --import tsx server.ts",
+    "test": "vitest run --dir tests"
+  }
+}

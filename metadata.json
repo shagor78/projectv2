@@ -1,0 +1,6 @@
+{
+  "name": "VeloStream",
+  "description": "Commercial OTT and Live IPTV streaming platform with multi-source HLS failover, subscriptions, wallet billing, and full SaaS administration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
