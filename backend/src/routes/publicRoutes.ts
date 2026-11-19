@@ -29,6 +29,12 @@ import {
 import { type AuthRequest, optionalAuth } from '../middleware/auth.ts';
 import { appCache } from '../services/cache.ts';
 import { recomputeChannelHealth } from '../services/hlsMonitor.ts';
+import {
+  escapeLikePattern,
+  matchesSearchFields,
+  normalizeSearchQuery,
+  tokenizeSearchQuery,
+} from '../utils/search.ts';
 
 const router = Router();
 
@@ -528,11 +534,18 @@ router.get('/channels', async (req, res) => {
   try {
     const categorySlug = typeof req.query.category === 'string' ? req.query.category.trim() : '';
     const language = typeof req.query.language === 'string' ? req.query.language.trim() : '';
-    const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+    const search = normalizeSearchQuery(
+      typeof req.query.search === 'string' ? req.query.search : req.query.q
+    );
     const placement = typeof req.query.placement === 'string' ? req.query.placement.trim() : '';
     const includeHidden = req.query.includeHidden === 'true';
+    const rawPage = Number(req.query.page);
+    const rawLimit = Number(req.query.limit);
+    const hasPagination = Number.isFinite(rawLimit) && rawLimit > 0;
+    const limit = hasPagination ? Math.min(200, Math.max(1, Math.floor(rawLimit))) : 0;
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
 
-    const cacheKey = `channels:list:${categorySlug}:${language}:${placement}:${includeHidden}:${search}`;
+    const cacheKey = `channels:list:${categorySlug}:${language}:${placement}:${includeHidden}:${search.toLowerCase()}:${page}:${limit}`;
     const cached = appCache.get<unknown>(cacheKey);
     if (cached) return res.json(cached);
 
@@ -583,17 +596,41 @@ router.get('/channels', async (req, res) => {
     }
 
     if (search) {
-      hydrated = hydrated.filter(
-        (ch) =>
-          ch.name.toLowerCase().includes(search) ||
-          (ch.description || '').toLowerCase().includes(search) ||
-          (ch.language || '').toLowerCase().includes(search) ||
-          (ch.country || '').toLowerCase().includes(search) ||
-          String(ch.channelNumber).includes(search)
-      );
+      const scored = hydrated
+        .map((ch) => {
+          const match = matchesSearchFields(search, ch.name, [
+            ch.slug,
+            ch.description,
+            ch.language,
+            ch.country,
+            ch.channelNumber,
+            ...(ch.categories || []).flatMap((c: any) => [c?.name, c?.slug]),
+            ...(ch.streams || []).map((s: any) => s?.label),
+          ]);
+          return { ch, score: match.score, matches: match.matches };
+        })
+        .filter((entry) => entry.matches)
+        .sort((a, b) => b.score - a.score || a.ch.sortOrder - b.ch.sortOrder);
+
+      hydrated = scored.map((entry) => entry.ch);
     }
 
-    const payload = { categories, languages: availableLanguages, channels: hydrated };
+    const total = hydrated.length;
+    const totalPages = hasPagination ? Math.max(1, Math.ceil(total / limit)) : 1;
+    const safePage = Math.min(page, totalPages);
+    const pagedChannels = hasPagination
+      ? hydrated.slice((safePage - 1) * limit, safePage * limit)
+      : hydrated;
+
+    const payload = {
+      categories,
+      languages: availableLanguages,
+      channels: pagedChannels,
+      total,
+      ...(hasPagination
+        ? { pagination: { page: safePage, limit, total, totalPages } }
+        : {}),
+    };
     appCache.set(cacheKey, payload, 30);
     res.json(payload);
   } catch (err) {
@@ -662,14 +699,21 @@ router.post('/channels/:id/streams/:streamId/failover-report', async (req, res) 
 
 router.get('/contents', async (req, res) => {
   try {
-    const type = typeof req.query.type === 'string' ? req.query.type : '';
-    const category = typeof req.query.category === 'string' ? req.query.category : '';
+    const type = typeof req.query.type === 'string' ? req.query.type.trim() : '';
+    const category = typeof req.query.category === 'string' ? req.query.category.trim() : '';
     const language = typeof req.query.language === 'string' ? req.query.language.trim() : '';
     const featured = req.query.featured === 'true';
-    const placement = typeof req.query.placement === 'string' ? req.query.placement : '';
-    const search = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+    const placement = typeof req.query.placement === 'string' ? req.query.placement.trim() : '';
+    const search = normalizeSearchQuery(
+      typeof req.query.search === 'string' ? req.query.search : req.query.q
+    );
+    const rawPage = Number(req.query.page);
+    const rawLimit = Number(req.query.limit);
+    const hasPagination = Number.isFinite(rawLimit) && rawLimit > 0;
+    const limit = hasPagination ? Math.min(200, Math.max(1, Math.floor(rawLimit))) : 0;
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
 
-    const cacheKey = `catalog:list:${type}:${category}:${language}:${featured}:${placement}:${search}`;
+    const cacheKey = `catalog:list:${type}:${category}:${language}:${featured}:${placement}:${search.toLowerCase()}:${page}:${limit}`;
     const cached = appCache.get<unknown>(cacheKey);
     if (cached) return res.json(cached);
 
@@ -709,20 +753,48 @@ router.get('/contents', async (req, res) => {
       );
     }
     if (search) {
-      hydrated = hydrated.filter(
-        (item) =>
-          item.title.toLowerCase().includes(search) ||
-          item.synopsis.toLowerCase().includes(search) ||
-          (item.director || '').toLowerCase().includes(search) ||
-          (item.tags || []).some((t: string) => t.toLowerCase().includes(search))
-      );
+      const scored = hydrated
+        .map((item) => {
+          const match = matchesSearchFields(search, item.title, [
+            item.slug,
+            item.synopsis,
+            item.director,
+            item.language,
+            item.country,
+            item.contentType,
+            item.releaseYear,
+            item.rating,
+            item.tags || [],
+            item.castList || [],
+            ...(item.categories || []).flatMap((c: any) => [c?.name, c?.slug]),
+          ]);
+          return { item, score: match.score, matches: match.matches };
+        })
+        .filter((entry) => entry.matches)
+        .sort((a, b) => b.score - a.score || b.item.viewCount - a.item.viewCount);
+
+      hydrated = scored.map((entry) => entry.item);
     }
 
     const filteredCats = type
       ? categories.filter((c) => c.contentType === 'all' || c.contentType === type)
       : categories;
 
-    const payload = { categories: filteredCats, items: hydrated };
+    const total = hydrated.length;
+    const totalPages = hasPagination ? Math.max(1, Math.ceil(total / limit)) : 1;
+    const safePage = Math.min(page, totalPages);
+    const pagedItems = hasPagination
+      ? hydrated.slice((safePage - 1) * limit, safePage * limit)
+      : hydrated;
+
+    const payload = {
+      categories: filteredCats,
+      items: pagedItems,
+      total,
+      ...(hasPagination
+        ? { pagination: { page: safePage, limit, total, totalPages } }
+        : {}),
+    };
     appCache.set(cacheKey, payload, 30);
     res.json(payload);
   } catch (err) {
@@ -792,13 +864,150 @@ router.get('/contents/:slug', async (req, res) => {
 
 router.get('/search', async (req, res) => {
   try {
-    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const q = normalizeSearchQuery(
+      typeof req.query.q === 'string' ? req.query.q : req.query.search
+    );
+    const typeFilter = typeof req.query.type === 'string' ? req.query.type.trim().toLowerCase() : 'all';
+    const rawPage = Number(req.query.page);
+    const rawLimit = Number(req.query.limit);
+    const hasPagination = Number.isFinite(rawLimit) && rawLimit > 0;
+    const limit = hasPagination ? Math.min(200, Math.max(1, Math.floor(rawLimit))) : 0;
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : 1;
+
     if (!q) {
-      return res.json({ query: '', channels: [], movies: [], drama: [], series: [], sports: [] });
+      return res.json({
+        query: '',
+        channels: [],
+        movies: [],
+        drama: [],
+        series: [],
+        sports: [],
+        total: 0,
+        ...(hasPagination ? { pagination: { page: 1, limit, total: 0, totalPages: 1 } } : {}),
+      });
     }
 
-    const pattern = `%${q}%`;
-    const [matchedChannels, matchedContents] = await Promise.all([
+    const tokens = tokenizeSearchQuery(q);
+    const tokenPatterns = tokens.map((tok) => `%${escapeLikePattern(tok)}%`);
+
+    // 1. Query matching categories & episodes via DB ILIKE for relational matching
+    const [matchedChannelCats, matchedContentCats, matchedEpisodes] = await Promise.all([
+      db
+        .select({ id: channelCategories.id })
+        .from(channelCategories)
+        .where(
+          or(
+            ...tokenPatterns.flatMap((pat) => [
+              ilike(channelCategories.name, pat),
+              ilike(channelCategories.slug, pat),
+            ])
+          )
+        ),
+      db
+        .select({ id: contentCategories.id })
+        .from(contentCategories)
+        .where(
+          or(
+            ...tokenPatterns.flatMap((pat) => [
+              ilike(contentCategories.name, pat),
+              ilike(contentCategories.slug, pat),
+            ])
+          )
+        ),
+      db
+        .select({ contentId: episodes.contentId, title: episodes.title })
+        .from(episodes)
+        .where(
+          and(
+            eq(episodes.isPublished, true),
+            or(
+              ...tokenPatterns.flatMap((pat) => [
+                ilike(episodes.title, pat),
+                ilike(episodes.synopsis, pat),
+              ])
+            )
+          )
+        ),
+    ]);
+
+    const chCatIds = matchedChannelCats.map((c) => c.id);
+    const coCatIds = matchedContentCats.map((c) => c.id);
+    const episodeTitlesByContentId = new Map<number, string[]>();
+    for (const ep of matchedEpisodes) {
+      const list = episodeTitlesByContentId.get(ep.contentId) || [];
+      list.push(ep.title);
+      episodeTitlesByContentId.set(ep.contentId, list);
+    }
+
+    const [catChAssigns, catCoAssigns] = await Promise.all([
+      chCatIds.length
+        ? db
+            .select({ channelId: channelCategoryAssignments.channelId })
+            .from(channelCategoryAssignments)
+            .where(inArray(channelCategoryAssignments.categoryId, chCatIds))
+        : Promise.resolve([]),
+      coCatIds.length
+        ? db
+            .select({ contentId: contentCategoryAssignments.contentId })
+            .from(contentCategoryAssignments)
+            .where(inArray(contentCategoryAssignments.categoryId, coCatIds))
+        : Promise.resolve([]),
+    ]);
+
+    // 2. Match numeric channelNumber / releaseYear & JSONB tags / cast safely across Postgres & inMemoryDb
+    const [publishedChannelMeta, publishedContentMeta] = await Promise.all([
+      db
+        .select({
+          id: channels.id,
+          channelNumber: channels.channelNumber,
+        })
+        .from(channels)
+        .where(eq(channels.isPublished, true)),
+      db
+        .select({
+          id: contents.id,
+          tags: contents.tags,
+          castList: contents.castList,
+          releaseYear: contents.releaseYear,
+        })
+        .from(contents)
+        .where(eq(contents.isPublished, true)),
+    ]);
+
+    const numericMatchedChannelIds = publishedChannelMeta
+      .filter((ch) => tokens.some((tok) => String(ch.channelNumber).includes(tok)))
+      .map((ch) => ch.id);
+
+    const extraMatchedChannelIds = Array.from(
+      new Set([
+        ...catChAssigns.map((a) => a.channelId),
+        ...numericMatchedChannelIds,
+      ])
+    );
+
+    const jsonMatchedContentIds = publishedContentMeta
+      .filter((co) => {
+        const metaText = [
+          ...(Array.isArray(co.tags) ? co.tags : []),
+          ...(Array.isArray(co.castList) ? co.castList : []),
+          String(co.releaseYear || ''),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return tokens.some((tok) => metaText.includes(tok));
+      })
+      .map((co) => co.id);
+
+    const extraMatchedContentIds = Array.from(
+      new Set([
+        ...catCoAssigns.map((a) => a.contentId),
+        ...Array.from(episodeTitlesByContentId.keys()),
+        ...jsonMatchedContentIds,
+      ])
+    );
+
+    // 3. Candidate DB ILIKE queries on channels & contents
+    const [candidateChannels, candidateContents] = await Promise.all([
       db
         .select()
         .from(channels)
@@ -806,13 +1015,20 @@ router.get('/search', async (req, res) => {
           and(
             eq(channels.isPublished, true),
             or(
-              ilike(channels.name, pattern),
-              ilike(channels.description, pattern),
-              ilike(channels.language, pattern)
+              ...tokenPatterns.flatMap((pat) => [
+                ilike(channels.name, pat),
+                ilike(channels.slug, pat),
+                ilike(channels.description, pat),
+                ilike(channels.language, pat),
+                ilike(channels.country, pat),
+              ]),
+              ...(extraMatchedChannelIds.length > 0
+                ? [inArray(channels.id, extraMatchedChannelIds)]
+                : [])
             )
           )
         )
-        .orderBy(asc(channels.sortOrder)),
+        .orderBy(asc(channels.sortOrder), asc(channels.channelNumber)),
       db
         .select()
         .from(contents)
@@ -820,10 +1036,18 @@ router.get('/search', async (req, res) => {
           and(
             eq(contents.isPublished, true),
             or(
-              ilike(contents.title, pattern),
-              ilike(contents.synopsis, pattern),
-              ilike(contents.director, pattern),
-              ilike(contents.language, pattern)
+              ...tokenPatterns.flatMap((pat) => [
+                ilike(contents.title, pat),
+                ilike(contents.slug, pat),
+                ilike(contents.synopsis, pat),
+                ilike(contents.director, pat),
+                ilike(contents.language, pat),
+                ilike(contents.country, pat),
+                ilike(contents.contentType, pat),
+              ]),
+              ...(extraMatchedContentIds.length > 0
+                ? [inArray(contents.id, extraMatchedContentIds)]
+                : [])
             )
           )
         )
@@ -831,17 +1055,109 @@ router.get('/search', async (req, res) => {
     ]);
 
     const [hydratedChannels, hydratedContents] = await Promise.all([
-      hydrateChannels(matchedChannels),
-      hydrateContents(matchedContents),
+      hydrateChannels(candidateChannels),
+      hydrateContents(candidateContents),
     ]);
 
-    res.json({
+    // 4. Verify full/multi-word token match & rank by relevance
+    const scoredChannels = hydratedChannels
+      .map((ch) => {
+        const match = matchesSearchFields(q, ch.name, [
+          ch.slug,
+          ch.description,
+          ch.language,
+          ch.country,
+          ch.channelNumber,
+          ...(ch.categories || []).flatMap((c: any) => [c?.name, c?.slug]),
+          ...(ch.streams || []).map((s: any) => s?.label),
+        ]);
+        return { item: ch, ...match };
+      })
+      .filter((entry) => entry.matches)
+      .sort((a, b) => b.score - a.score || a.item.sortOrder - b.item.sortOrder)
+      .map((entry) => entry.item);
+
+    const scoredContents = hydratedContents
+      .map((item) => {
+        const match = matchesSearchFields(q, item.title, [
+          item.slug,
+          item.synopsis,
+          item.director,
+          item.language,
+          item.country,
+          item.contentType,
+          item.releaseYear,
+          item.rating,
+          item.tags || [],
+          item.castList || [],
+          ...(item.categories || []).flatMap((c: any) => [c?.name, c?.slug]),
+          ...(episodeTitlesByContentId.get(item.id) || []),
+        ]);
+        return { item, ...match };
+      })
+      .filter((entry) => entry.matches)
+      .sort((a, b) => b.score - a.score || b.item.viewCount - a.item.viewCount)
+      .map((entry) => entry.item);
+
+    const filteredChannels =
+      typeFilter === 'all' || typeFilter === 'channels' ? scoredChannels : [];
+    const moviesAll =
+      typeFilter === 'all' || typeFilter === 'movies' || typeFilter === 'movie'
+        ? scoredContents.filter((c) => c.contentType === 'movie')
+        : [];
+    const dramaAll =
+      typeFilter === 'all' || typeFilter === 'drama'
+        ? scoredContents.filter((c) => c.contentType === 'drama')
+        : [];
+    const seriesAll =
+      typeFilter === 'all' || typeFilter === 'series'
+        ? scoredContents.filter((c) => c.contentType === 'series')
+        : [];
+    const sportsAll =
+      typeFilter === 'all' || typeFilter === 'sports'
+        ? scoredContents.filter((c) => c.contentType === 'sports')
+        : [];
+
+    if (!hasPagination) {
+      const total =
+        filteredChannels.length +
+        moviesAll.length +
+        dramaAll.length +
+        seriesAll.length +
+        sportsAll.length;
+      return res.json({
+        query: q,
+        channels: filteredChannels,
+        movies: moviesAll,
+        drama: dramaAll,
+        series: seriesAll,
+        sports: sportsAll,
+        total,
+      });
+    }
+
+    const unified = [
+      ...filteredChannels.map((item) => ({ kind: 'channel' as const, item })),
+      ...moviesAll.map((item) => ({ kind: 'movie' as const, item })),
+      ...dramaAll.map((item) => ({ kind: 'drama' as const, item })),
+      ...seriesAll.map((item) => ({ kind: 'series' as const, item })),
+      ...sportsAll.map((item) => ({ kind: 'sports' as const, item })),
+    ];
+
+    const total = unified.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const sliced = unified.slice((safePage - 1) * limit, safePage * limit);
+
+    return res.json({
       query: q,
-      channels: hydratedChannels,
-      movies: hydratedContents.filter((c) => c.contentType === 'movie'),
-      drama: hydratedContents.filter((c) => c.contentType === 'drama'),
-      series: hydratedContents.filter((c) => c.contentType === 'series'),
-      sports: hydratedContents.filter((c) => c.contentType === 'sports'),
+      channels: sliced.filter((x) => x.kind === 'channel').map((x) => x.item),
+      movies: sliced.filter((x) => x.kind === 'movie').map((x) => x.item),
+      drama: sliced.filter((x) => x.kind === 'drama').map((x) => x.item),
+      series: sliced.filter((x) => x.kind === 'series').map((x) => x.item),
+      sports: sliced.filter((x) => x.kind === 'sports').map((x) => x.item),
+      total,
+      pagination: { page: safePage, limit, total, totalPages },
     });
   } catch (err) {
     console.error('/api/search error:', err);

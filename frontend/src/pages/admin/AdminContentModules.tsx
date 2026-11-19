@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Layers, Plus, Trash2, Upload } from 'lucide-react';
 import { apiFetch } from '../../services/api.ts';
 import { ContentCategory, ContentItem } from '../../types/platform.ts';
+import { matchesClientSearch } from '../../utils/search.ts';
 
 const PAGE_SIZE = 12;
 
@@ -171,10 +172,16 @@ export function AdminContentSection({
   };
 
   const filtered = items.filter((i) => {
-    const matchesSearch =
-      !search.trim() ||
-      i.title.toLowerCase().includes(search.toLowerCase()) ||
-      (i.tags || []).some((t) => t.toLowerCase().includes(search.toLowerCase()));
+    const matchesSearch = matchesClientSearch(search, i.title, [
+      i.slug,
+      i.synopsis,
+      i.director,
+      i.language,
+      i.country,
+      i.releaseYear,
+      i.tags || [],
+      i.castList || [],
+    ]);
     const matchesStatus =
       statusFilter === 'all' ||
       (statusFilter === 'published' && i.isPublished) ||

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { GripVertical, Plus, RefreshCw, Trash2, Upload } from 'lucide-react';
 import { apiFetch } from '../../services/api.ts';
 import { ChannelCategory, LiveChannel } from '../../types/platform.ts';
+import { matchesClientSearch } from '../../utils/search.ts';
 
 export function AdminLiveTvSection() {
   const [channels, setChannels] = useState<LiveChannel[]>([]);
@@ -163,11 +164,16 @@ export function AdminLiveTvSection() {
     });
   };
 
-  const filtered = channels.filter(
-    (c) =>
-      !search.trim() ||
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      String(c.channelNumber).includes(search)
+  const filtered = channels.filter((c) =>
+    matchesClientSearch(search, c.name, [
+      c.channelNumber,
+      c.slug,
+      c.description,
+      c.language,
+      c.country,
+      ...(c.categories || []).flatMap((cat) => [cat.name, cat.slug]),
+      ...(c.streams || []).map((s) => s.label),
+    ])
   );
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);

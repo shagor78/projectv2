@@ -534,3 +534,148 @@ export const BANGLA_DRAMAS_CATALOG: ReadonlyArray<readonly [string, string]> = [
   ...BANGLA_DRAMAS_PART_1,
   ...BANGLA_DRAMAS_PART_2,
 ];
+
+export interface CustomDramaPosterEntry {
+  title: string;
+  hlsUrl: string;
+  posterUrl: string;
+  backdropUrl: string;
+  priorityOrder: number;
+}
+
+export const CUSTOM_DRAMA_POSTERS: ReadonlyArray<CustomDramaPosterEntry> = [
+  {
+    title: 'Barir Choto Chele',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2026/Barir_Choto_Chele_(2026).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/barir_choto_chele1_102d71c3.jpg',
+    backdropUrl: '/assets/aistudio/barir_choto_chele1_102d71c3.jpg',
+    priorityOrder: 1,
+  },
+  {
+    title: 'Double Pressure',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2026/Double_Pressure_(2026).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/dubble_Pressure_4bca45bb.jpg',
+    backdropUrl: '/assets/aistudio/dubble_Pressure_4bca45bb.jpg',
+    priorityOrder: 2,
+  },
+  {
+    title: 'Half Bottle',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2026/Half_Bottle_(2026).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Half_Bottle1_911429d8.jpg',
+    backdropUrl: '/assets/aistudio/Half_Bottle1_911429d8.jpg',
+    priorityOrder: 3,
+  },
+  {
+    title: 'Poroma Sundori',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/exclusive/Poroma_Sundori/Poroma_Sundori_(2026).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Poroma_Sundori_d9b18ced.jpg',
+    backdropUrl: '/assets/aistudio/Poroma_Sundori_d9b18ced.jpg',
+    priorityOrder: 4,
+  },
+  {
+    title: 'Shee Ki Ashbe Na',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2026/Shee_Ki_Ashbe_Na_(2026).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Shee_Ki_Ashbe_Na__2026_Web_e1a2fe12.jpg',
+    backdropUrl: '/assets/aistudio/Shee_Ki_Ashbe_Na__2026_Web_e1a2fe12.jpg',
+    priorityOrder: 5,
+  },
+  {
+    title: 'Boro Bhai',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2025/Boro_Bhai_(2025).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Boro_Bhai_2025_cd679797.jpg',
+    backdropUrl: '/assets/aistudio/Boro_Bhai_2025_cd679797.jpg',
+    priorityOrder: 6,
+  },
+  {
+    title: 'Tel',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2025/Tel_(2025).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/tel_a07efca6.jpg',
+    backdropUrl: '/assets/aistudio/tel_a07efca6.jpg',
+    priorityOrder: 7,
+  },
+  {
+    title: 'Tumi Fuler Moto',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2024/Tumi_Fuler_Moto_(2024).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/tumi_fuler_moto_d84d9474.jpg',
+    backdropUrl: '/assets/aistudio/tumi_fuler_moto_d84d9474.jpg',
+    priorityOrder: 8,
+  },
+  {
+    title: 'Na Rakha Kotha',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2023/Na_Rakha_Kotha_(2023).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/na_rakha_kotha_3b6ab31e.jpg',
+    backdropUrl: '/assets/aistudio/na_rakha_kotha_3b6ab31e.jpg',
+    priorityOrder: 9,
+  },
+  {
+    title: 'Thot Kata Jamai',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2023/Thot_Kata_Jamai_(2023).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/thod_kata_jamai_ed587c4f.jpg',
+    backdropUrl: '/assets/aistudio/thod_kata_jamai_ed587c4f.jpg',
+    priorityOrder: 10,
+  },
+  {
+    title: 'Ural Prem',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2023/Ural_Prem_(2023).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Ural_Pream_6ebd4489.jpg',
+    backdropUrl: '/assets/aistudio/Ural_Pream_6ebd4489.jpg',
+    priorityOrder: 11,
+  },
+  {
+    title: 'Opochonder Saat Din',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2019/Opochonder_Saat_Din_(2020).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Saatdin1920_ba6d5dce.jpg',
+    backdropUrl: '/assets/aistudio/Saatdin1920_ba6d5dce.jpg',
+    priorityOrder: 12,
+  },
+  {
+    title: 'F For Faria',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2022/F_For_Faria_(2022).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Foria_web_Img_6504f968.jpg',
+    backdropUrl: '/assets/aistudio/Foria_web_Img_6504f968.jpg',
+    priorityOrder: 13,
+  },
+  {
+    title: 'Ekhanei Sesh Noy',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2022/Ekhanei_Sesh_Noy_(2022).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Amader_Golpota_Ekhanei_Sesh___2__f7412a69.jpg',
+    backdropUrl: '/assets/aistudio/Amader_Golpota_Ekhanei_Sesh___2__f7412a69.jpg',
+    priorityOrder: 14,
+  },
+  {
+    title: 'Shopner Shohor',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/Eid_Special_Natok/Shopner_Shohor_(2021).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Chomoker-Shohor-Web_05a7883c.jpg',
+    backdropUrl: '/assets/aistudio/Chomoker-Shohor-Web_05a7883c.jpg',
+    priorityOrder: 15,
+  },
+  {
+    title: 'Aynar Golpo',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2021/Aynar_Golpo_(2021).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Fere_asarGolpho_adcedda6.jpg',
+    backdropUrl: '/assets/aistudio/Fere_asarGolpho_adcedda6.jpg',
+    priorityOrder: 16,
+  },
+  {
+    title: 'Prem',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2021/Prem_(2021).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Betal_Prem_a2982ae4.jpg',
+    backdropUrl: '/assets/aistudio/Betal_Prem_a2982ae4.jpg',
+    priorityOrder: 17,
+  },
+  {
+    title: 'Benger Chata',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/comedy_natok/Benger_Chata_(2021).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Neel_Chata_Natok__36fae400.jpg',
+    backdropUrl: '/assets/aistudio/Neel_Chata_Natok__36fae400.jpg',
+    priorityOrder: 18,
+  },
+  {
+    title: 'Tomar Opekkhai',
+    hlsUrl: 'https://vods2.aynaott.com/vod/bangla/drama/gseries/2020/Tomar_Opekkhai_(2020).mp4/index.m3u8',
+    posterUrl: '/assets/aistudio/Tomaroi_jonno_6eb9e313.jpg',
+    backdropUrl: '/assets/aistudio/Tomaroi_jonno_6eb9e313.jpg',
+    priorityOrder: 19,
+  },
+];
+

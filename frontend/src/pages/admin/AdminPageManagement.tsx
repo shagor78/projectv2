@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp, ExternalLink, Plus, Trash2, Upload } from 'lucide-react';
 import { apiFetch } from '../../services/api.ts';
 import { SitePageRecord, SitePageSection } from '../../types/platform.ts';
+import { matchesClientSearch } from '../../utils/search.ts';
 
 export function AdminPageManagement({ navigate }: { navigate: (path: string) => void }) {
   const [pages, setPages] = useState<SitePageRecord[]>([]);
@@ -141,11 +142,8 @@ export function AdminPageManagement({ navigate }: { navigate: (path: string) => 
     }
   };
 
-  const filtered = pages.filter(
-    (p) =>
-      !search.trim() ||
-      p.title.toLowerCase().includes(search.toLowerCase()) ||
-      p.slug.toLowerCase().includes(search.toLowerCase())
+  const filtered = pages.filter((p) =>
+    matchesClientSearch(search, p.title, [p.slug, p.subtitle])
   );
 
   return (

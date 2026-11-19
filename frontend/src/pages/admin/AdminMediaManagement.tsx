@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, Copy, RefreshCw, Replace, Trash2, Upload } from 'lucide-react';
 import { apiFetch } from '../../services/api.ts';
 import { MediaAssetItem } from '../../types/platform.ts';
+import { matchesClientSearch } from '../../utils/search.ts';
 
 export function AdminMediaManagement() {
   const [assets, setAssets] = useState<MediaAssetItem[]>([]);
@@ -80,10 +81,7 @@ export function AdminMediaManagement() {
   };
 
   const filtered = assets.filter((a) => {
-    const matchesSearch =
-      !search.trim() ||
-      a.filename.toLowerCase().includes(search.toLowerCase()) ||
-      a.usedBy.some((u) => u.toLowerCase().includes(search.toLowerCase()));
+    const matchesSearch = matchesClientSearch(search, a.filename, [a.source, a.usedBy || []]);
     const matchesFilter =
       filter === 'all' ||
       (filter === 'uploads' && a.source === 'uploads') ||

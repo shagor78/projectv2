@@ -9,6 +9,7 @@ import {
   HeroSlide,
   PageHeroSlider,
 } from '../types/platform.ts';
+import { matchesClientSearch } from '../utils/search.ts';
 import { WidescreenContentRail } from './HomePage.tsx';
 
 interface CatalogPageProps {
@@ -59,7 +60,7 @@ export function CatalogPage({ contentType, navigate }: CatalogPageProps) {
 
   const isDramaOnlyBangla = contentType === 'drama';
   const isSeriesDirectGrid = contentType === 'series';
-  const showFilterBar = contentType === 'movie';
+  const showFilterBar = contentType === 'movie' || items.length > 0;
   const meta = SECTION_META[contentType];
 
   useEffect(() => {
@@ -102,7 +103,7 @@ export function CatalogPage({ contentType, navigate }: CatalogPageProps) {
 
   useEffect(() => {
     setVisibleCount(DRAMA_PAGE_SIZE);
-  }, [selectedCategory, searchQuery, contentType]);
+  }, [selectedCategory, selectedLanguage, searchQuery, contentType]);
 
   const effectiveHeroSlides = useMemo<HeroSlide[]>(() => {
     const banglaSlides = isDramaOnlyBangla
@@ -165,12 +166,17 @@ export function CatalogPage({ contentType, navigate }: CatalogPageProps) {
         isDramaOnlyBangla ||
         selectedLanguage === 'All' ||
         (item.language || '').toLowerCase() === selectedLanguage.toLowerCase();
-      const q = searchQuery.trim().toLowerCase();
-      const searchOk =
-        !q ||
-        item.title.toLowerCase().includes(q) ||
-        item.synopsis.toLowerCase().includes(q) ||
-        (item.tags || []).some((t) => t.toLowerCase().includes(q));
+      const searchOk = matchesClientSearch(searchQuery, item.title, [
+        item.slug,
+        item.synopsis,
+        item.director,
+        item.language,
+        item.country,
+        item.releaseYear,
+        item.tags || [],
+        item.castList || [],
+        ...(item.categories || []).flatMap((c) => [c.name, c.slug]),
+      ]);
       return catOk && langOk && searchOk;
     });
   }, [items, isDramaOnlyBangla, selectedCategory, selectedLanguage, searchQuery]);

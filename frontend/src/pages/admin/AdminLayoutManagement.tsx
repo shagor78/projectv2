@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { HeroSlider } from '../../components/HeroSlider.tsx';
 import { apiFetch } from '../../services/api.ts';
+import { matchesClientSearch } from '../../utils/search.ts';
 import {
   ChannelCategory,
   ContentItem,
@@ -542,7 +543,13 @@ function HomepageBuilderTab() {
                 />
                 <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
                   {allChannels
-                    .filter((ch) => !itemSearch.trim() || ch.name.toLowerCase().includes(itemSearch.toLowerCase()))
+                    .filter((ch) =>
+                      matchesClientSearch(itemSearch, ch.name, [
+                        ch.channelNumber,
+                        ch.language,
+                        ch.country,
+                      ])
+                    )
                     .map((ch) => {
                       const exists = assignedDraft.some((d) => d.channelId === ch.id);
                       return (
@@ -566,7 +573,14 @@ function HomepageBuilderTab() {
                       );
                     })}
                   {allContents
-                    .filter((co) => !itemSearch.trim() || co.title.toLowerCase().includes(itemSearch.toLowerCase()))
+                    .filter((co) =>
+                      matchesClientSearch(itemSearch, co.title, [
+                        co.contentType,
+                        co.language,
+                        co.director,
+                        co.tags || [],
+                      ])
+                    )
                     .map((co) => {
                       const exists = assignedDraft.some((d) => d.contentId === co.id);
                       return (

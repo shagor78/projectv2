@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, ChevronRight, ChevronUp, Heart, Radio, Signal, Tv } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ChevronRight, ChevronUp, Heart, Radio, Search, Signal, Tv } from 'lucide-react';
 import { HeroSlider } from '../components/HeroSlider.tsx';
 import { HlsPlayer } from '../components/HlsPlayer.tsx';
 import { LiveChannelCard } from '../components/LiveChannelCard.tsx';
 import { useAuth } from '../context/AuthContext.tsx';
 import { apiFetch } from '../services/api.ts';
 import { ChannelCategory, HeroSlide, LiveChannel, PageHeroSlider } from '../types/platform.ts';
+import { matchesClientSearch } from '../utils/search.ts';
 
 interface LiveTvPageProps {
   initialChannelSlug?: string;
@@ -91,6 +92,8 @@ export function LiveTvPage({ initialChannelSlug, navigate }: LiveTvPageProps) {
   const [channels, setChannels] = useState<LiveChannel[]>([]);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [expandedLimit, setExpandedLimit] = useState<number>(EXPANDED_BATCH_SIZE);
+  const [channelSearch, setChannelSearch] = useState('');
+  const [searchLimit, setSearchLimit] = useState<number>(EXPANDED_BATCH_SIZE);
   const [activeChannelSlug, setActiveChannelSlug] = useState<string>(initialChannelSlug || '');
   const [favoriteChannelIds, setFavoriteChannelIds] = useState<Set<number>>(new Set());
   const [showTheater, setShowTheater] = useState(Boolean(initialChannelSlug));
@@ -179,6 +182,21 @@ export function LiveTvPage({ initialChannelSlug, navigate }: LiveTvPageProps) {
     () => (expandedGroupKey ? verticalSections.find((g) => g.key === expandedGroupKey) || null : null),
     [expandedGroupKey, verticalSections]
   );
+
+  const searchedChannels = useMemo(() => {
+    if (!channelSearch.trim()) return [];
+    return channels.filter((ch) =>
+      matchesClientSearch(channelSearch, ch.name, [
+        ch.slug,
+        ch.description,
+        ch.language,
+        ch.country,
+        ch.channelNumber,
+        ...(ch.categories || []).flatMap((c) => [c.name, c.slug]),
+        ...(ch.streams || []).map((s) => s.label),
+      ])
+    );
+  }, [channels, channelSearch]);
 
   const activeChannel =
     channels.find((c) => c.slug === activeChannelSlug) || channels[0] || null;
@@ -565,9 +583,24 @@ export function LiveTvPage({ initialChannelSlug, navigate }: LiveTvPageProps) {
               Live TV Channels
             </h1>
           </div>
-          <span className="text-xs text-slate-400">
-            Press 0–9 on Smart TV remote to tune channel number
-          </span>
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                type="search"
+                value={channelSearch}
+                onChange={(e) => {
+                  setChannelSearch(e.target.value);
+                  setSearchLimit(EXPANDED_BATCH_SIZE);
+                }}
+                placeholder="Search channels, category, language..."
+                className="tv-focusable h-9 w-full rounded-full border border-white/15 bg-[#12141C] pl-9 pr-4 text-xs text-white placeholder-slate-400 focus:border-pink-400 focus:outline-none"
+              />
+            </div>
+            <span className="hidden text-xs text-slate-400 lg:inline">
+              Press 0–9 on Smart TV remote to tune channel number
+            </span>
+          </div>
         </div>
 
         {loading ? (
@@ -596,6 +629,69 @@ export function LiveTvPage({ initialChannelSlug, navigate }: LiveTvPageProps) {
               Publish channels in the Admin Console to make them available here.
             </p>
           </div>
+        ) : channelSearch.trim() ? (
+          <section>
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <span aria-hidden="true" className="h-4 w-[3px] rounded-full bg-gradient-to-b from-[#9333EA] to-[#EC4899]" />
+                <h2 className="font-display text-lg font-bold tracking-tight text-white sm:text-xl">
+                  Matching Channels
+                </h2>
+                <span className="font-mono-num text-xs text-slate-400">
+                  ({searchedChannels.length})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setChannelSearch('');
+                  setSearchLimit(EXPANDED_BATCH_SIZE);
+                }}
+                className="text-xs font-medium text-pink-400 hover:text-pink-300"
+              >
+                Clear Search
+              </button>
+            </div>
+
+            {searchedChannels.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-[#12141C] py-12 text-center text-sm text-slate-400">
+                No Live TV channels match "{channelSearch.trim()}". Try another channel name, category, language, or number.
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-x-4 gap-y-6 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
+                  {searchedChannels.slice(0, searchLimit).map((ch) => (
+                    <LiveChannelCard
+                      key={ch.id}
+                      channel={ch}
+                      isActive={activeChannel?.id === ch.id}
+                      isFavorited={favoriteChannelIds.has(ch.id)}
+                      onToggleFavorite={toggleFavoriteChannel}
+                      onSelect={handleSelectChannel}
+                    />
+                  ))}
+                </div>
+                {searchedChannels.length > searchLimit && (
+                  <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSearchLimit((prev) => prev + EXPANDED_BATCH_SIZE)}
+                      className="tv-focusable rounded-full bg-gradient-to-r from-[#9333EA] to-[#EC4899] px-6 py-2.5 text-xs font-semibold text-white shadow-lg shadow-pink-500/20 hover:brightness-110 transition-all"
+                    >
+                      Load {Math.min(EXPANDED_BATCH_SIZE, searchedChannels.length - searchLimit)} More Channels
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSearchLimit(searchedChannels.length)}
+                      className="tv-focusable rounded-full border border-white/15 bg-white/5 px-6 py-2.5 text-xs font-semibold text-slate-200 hover:bg-white/10 transition-colors"
+                    >
+                      Show All ({searchedChannels.length - searchLimit} remaining)
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
         ) : expandedGroup ? (
           <section>
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

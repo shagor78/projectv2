@@ -1,5 +1,7 @@
+import fs from 'node:fs';
 import bcrypt from 'bcryptjs';
-import { count, eq, like, sql } from 'drizzle-orm';
+import { and, count, eq, like, sql } from 'drizzle-orm';
+import { DEFAULT_EXCEL_PATH } from '../../backend/src/config/env.ts';
 import { db } from '../index.ts';
 import {
   adminRoles,
@@ -13,6 +15,7 @@ import {
   contentPlacements,
   contents,
   episodes,
+  excelImportLogs,
   heroSliderItems,
   heroSlides,
   homepageSectionItems,
@@ -28,8 +31,15 @@ import {
   wallets,
   walletTransactions,
 } from '../schema/index.ts';
-import { BANGLA_DRAMAS_CATALOG } from './banglaDramasCatalog.ts';
+import {
+  BANGLA_DRAMAS_CATALOG,
+  CUSTOM_DRAMA_POSTERS,
+} from './banglaDramasCatalog.ts';
 import { UPLOADED_CHANNEL_LOGOS_CATALOG } from './channelLogosCatalog.ts';
+import {
+  applyUserStreamsAndCleanupDummyContentOnce,
+  seedCategorizedM3uChannelsOnce,
+} from './m3uChannelsSeed.ts';
 
 function makeStudioLogo(svgInner: string, bg = '#FFFFFF'): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240"><rect width="240" height="240" fill="${bg}"/>${svgInner}</svg>`;
@@ -175,10 +185,21 @@ export async function ensureSeeded(): Promise<void> {
   return seedPromise;
 }
 
+async function ensureWorkspaceExcelSeeded(): Promise<void> {
+  if (!fs.existsSync(DEFAULT_EXCEL_PATH)) return;
+  const [{ value: importCount }] = await db.select({ value: count() }).from(excelImportLogs);
+  if (importCount > 0) return;
+  const { importWorkspaceExcelFile } = await import('../../backend/src/services/excelImportService.ts');
+  await importWorkspaceExcelFile({ mode: 'seed', overwriteExisting: false });
+}
+
 async function runSeed(): Promise<void> {
   const [{ value: pkgCount }] = await db.select({ value: count() }).from(packages);
   if (pkgCount > 0) {
     await ensureLayoutSeeded();
+    await ensureWorkspaceExcelSeeded();
+    await seedCategorizedM3uChannelsOnce();
+    await applyUserStreamsAndCleanupDummyContentOnce();
     return;
   }
 
@@ -1267,6 +1288,9 @@ async function runSeed(): Promise<void> {
   });
 
   await ensureLayoutSeeded();
+  await ensureWorkspaceExcelSeeded();
+  await seedCategorizedM3uChannelsOnce();
+  await applyUserStreamsAndCleanupDummyContentOnce();
   console.log('[Seed] Completed successfully.');
 }
 
@@ -1315,6 +1339,7 @@ async function ensureLayoutSeeded(): Promise<void> {
   await seedBanglaDramasOnce();
   await migrateDramaUrlsToAynaottOnce();
   await applyOttUiUpgradeV3Once();
+  await applyCustomDramaPostersOnce();
   await seedUploadedChannelLogosOnce();
   if (marker?.value === 'true') {
     await ensureBroadcastLogosSeeded();
@@ -2905,6 +2930,7 @@ async function seedBanglaDramasOnce(): Promise<void> {
     tags: string[];
   }
 
+  const customPosterByUrl = new Map(CUSTOM_DRAMA_POSTERS.map((entry) => [entry.hlsUrl, entry]));
   const toInsert: PendingDrama[] = [];
 
   for (let idx = 0; idx < BANGLA_DRAMAS_CATALOG.length; idx += 1) {
@@ -2936,10 +2962,12 @@ async function seedBanglaDramasOnce(): Promise<void> {
           ? 'Bangla Original'
           : 'Bangla Television Drama';
 
-    const backdropUrl = artworkPool[idx % artworkPool.length];
-    const posterUrl = posterPool[idx % posterPool.length];
-    const isRecent = yearMatch >= 2025 || isExclusive;
-    const isFeatured = yearMatch >= 2026 || isExclusive;
+    const customPoster = customPosterByUrl.get(hlsUrl);
+
+    const backdropUrl = customPoster ? customPoster.backdropUrl : artworkPool[idx % artworkPool.length];
+    const posterUrl = customPoster ? customPoster.posterUrl : posterPool[idx % posterPool.length];
+    const isRecent = Boolean(customPoster) || yearMatch >= 2025 || isExclusive;
+    const isFeatured = Boolean(customPoster) || yearMatch >= 2026 || isExclusive;
 
     toInsert.push({
       title: cleanTitle,
@@ -2956,7 +2984,7 @@ async function seedBanglaDramasOnce(): Promise<void> {
       isFeatured,
       isRecentlyAdded: isRecent,
       placements: isRecent ? ['bangla_entertainment', 'recently_added'] : ['bangla_entertainment'],
-      sortOrder: (2030 - yearMatch) * 1000 + idx,
+      sortOrder: customPoster ? customPoster.priorityOrder : (2030 - yearMatch) * 1000 + 100 + idx,
       viewCount: 800 + ((yearMatch - 2016) * 120) + ((526 - idx) % 400),
       categorySlugs,
       tags: ['Bangla', 'Natok', categoryLabel, String(yearMatch)],
@@ -3609,6 +3637,147 @@ async function seedUploadedChannelLogosOnce(): Promise<void> {
 
   console.log(`[Seed] Inserted ${insertedCount} uploaded channel logos.`);
 }
+
+async function applyCustomDramaPostersOnce(): Promise<void> {
+  const markerKey = 'custom_drama_posters_v1';
+  const [done] = await db
+    .select()
+    .from(systemSettings)
+    .where(eq(systemSettings.key, markerKey));
+  if (done?.value === 'true') return;
+
+  const allDramas = await db
+    .select()
+    .from(contents)
+    .where(eq(contents.contentType, 'drama'));
+
+  const dramaByUrl = new Map(allDramas.map((d) => [d.hlsUrl, d]));
+  const dramaByTitle = new Map(allDramas.map((d) => [d.title.trim().toLowerCase(), d]));
+  const updatedDramaIds = new Set<number>();
+
+  let matchedCount = 0;
+  let leadDramaRow: typeof allDramas[number] | null = null;
+  let leadPosterUrl = '';
+
+  for (const entry of CUSTOM_DRAMA_POSTERS) {
+    const matched =
+      dramaByUrl.get(entry.hlsUrl) ||
+      dramaByTitle.get(entry.title.trim().toLowerCase());
+    if (!matched) continue;
+
+    matchedCount += 1;
+    updatedDramaIds.add(matched.id);
+
+    if (!leadDramaRow) {
+      leadDramaRow = matched;
+      leadPosterUrl = entry.backdropUrl;
+    }
+
+    const mergedPlacements = Array.from(
+      new Set([...(matched.placements || []), 'bangla_entertainment', 'recently_added'])
+    );
+
+    await db
+      .update(contents)
+      .set({
+        posterUrl: entry.posterUrl,
+        backdropUrl: entry.backdropUrl,
+        sortOrder: entry.priorityOrder,
+        isFeatured: true,
+        isRecentlyAdded: true,
+        placements: mergedPlacements,
+        updatedAt: new Date(),
+      })
+      .where(eq(contents.id, matched.id));
+
+    for (const placementKey of ['bangla_entertainment', 'recently_added']) {
+      const [existingPlacement] = await db
+        .select()
+        .from(contentPlacements)
+        .where(
+          and(
+            eq(contentPlacements.contentId, matched.id),
+            eq(contentPlacements.placementKey, placementKey)
+          )
+        );
+
+      if (existingPlacement) {
+        await db
+          .update(contentPlacements)
+          .set({ sortOrder: entry.priorityOrder })
+          .where(eq(contentPlacements.id, existingPlacement.id));
+      } else {
+        await db.insert(contentPlacements).values({
+          contentId: matched.id,
+          placementKey,
+          sortOrder: entry.priorityOrder,
+        });
+      }
+    }
+  }
+
+  // Push any other non-postered dramas that previously had sortOrder < 100 behind custom-poster dramas
+  for (const d of allDramas) {
+    if (!updatedDramaIds.has(d.id) && (d.sortOrder ?? 0) < 100) {
+      const bumpedOrder = 4000 + d.id;
+      await db
+        .update(contents)
+        .set({ sortOrder: bumpedOrder, updatedAt: new Date() })
+        .where(eq(contents.id, d.id));
+    }
+  }
+
+  // Sync drama-linked hero slider items with the new custom artwork & lead drama
+  if (leadDramaRow && leadPosterUrl) {
+    const existingSliderRows = await db.select().from(heroSliderItems);
+    for (const slide of existingSliderRows) {
+      if (slide.contentId && updatedDramaIds.has(slide.contentId)) {
+        const entry = CUSTOM_DRAMA_POSTERS.find((p) => {
+          const d = dramaByUrl.get(p.hlsUrl) || dramaByTitle.get(p.title.trim().toLowerCase());
+          return d?.id === slide.contentId;
+        });
+        if (entry) {
+          await db
+            .update(heroSliderItems)
+            .set({ imageUrl: entry.backdropUrl, updatedAt: new Date() })
+            .where(eq(heroSliderItems.id, slide.id));
+        }
+      } else if (
+        slide.pageKey === 'drama' &&
+        slide.imageUrl.startsWith('/src/assets/images/')
+      ) {
+        await db
+          .update(heroSliderItems)
+          .set({
+            title: leadDramaRow.title,
+            subtitle: leadDramaRow.synopsis || slide.subtitle,
+            imageUrl: leadPosterUrl,
+            ctaLink: `/title/${leadDramaRow.slug}`,
+            secondaryCtaLink: `/title/${leadDramaRow.slug}`,
+            contentId: leadDramaRow.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(heroSliderItems.id, slide.id));
+      }
+    }
+  }
+
+  await db
+    .insert(systemSettings)
+    .values({
+      key: markerKey,
+      value: 'true',
+      category: 'system',
+      description: 'Assigns custom uploaded drama posters and moves matched dramas to the front of drama listings',
+    })
+    .onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: 'true', updatedAt: new Date() },
+    });
+
+  console.log(`[Seed] Applied custom posters & front ordering to ${matchedCount} Bangla dramas.`);
+}
+
 
 
 

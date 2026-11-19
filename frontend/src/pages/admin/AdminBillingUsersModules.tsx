@@ -3,6 +3,7 @@ import { Trash2, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { apiFetch, formatCurrency } from '../../services/api.ts';
 import { SubscriptionPackage } from '../../types/platform.ts';
+import { matchesClientSearch } from '../../utils/search.ts';
 
 export function AdminUsersSection() {
   const { user: currentUser } = useAuth();
@@ -64,12 +65,8 @@ export function AdminUsersSection() {
     }
   };
 
-  const filtered = users.filter(
-    (u) =>
-      !search.trim() ||
-      u.fullName.toLowerCase().includes(search.toLowerCase()) ||
-      (u.email || '').toLowerCase().includes(search.toLowerCase()) ||
-      (u.phone || '').includes(search)
+  const filtered = users.filter((u) =>
+    matchesClientSearch(search, u.fullName, [u.email, u.phone, u.role, u.status, u.uid])
   );
 
   return (
